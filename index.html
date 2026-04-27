@@ -168,14 +168,22 @@
       stroke-dasharray: 3 7;
       filter: drop-shadow(0 0 5px rgba(39,166,68,.35));
     }
-    .edge-label {
-      fill: var(--secondary);
-      font-size: 10px;
-      font-weight: 590;
-      letter-spacing: .035em;
+    .port-dot {
+      fill: var(--warn);
+      stroke: rgba(8,9,10,.95);
+      stroke-width: 3px;
+      filter: drop-shadow(0 0 7px rgba(224,155,45,.55));
+      pointer-events: none;
+    }
+    .edge-label,
+    .port-label {
+      fill: var(--text);
+      font-size: 9.5px;
+      font-weight: 650;
+      letter-spacing: .025em;
       text-transform: uppercase;
       paint-order: stroke;
-      stroke: rgba(8,9,10,.92);
+      stroke: rgba(8,9,10,.96);
       stroke-width: 4px;
       stroke-linejoin: round;
       pointer-events: none;
@@ -486,6 +494,11 @@
           ['canvas','genetics-lab']
         ],
         nodes:   ['provider-app','api','canvas','health-gorilla','ext-labs','genetics-lab'],
+        portLabels: [
+          { x: 92, y: 575, dotX: 70, dotY: 590, text: 'Order record in' },
+          { x: 420, y: 538, dotX: 420, dotY: 551, text: 'Blood order out' },
+          { x: 555, y: 641, dotX: 550, dotY: 626, text: 'Genetic order out' }
+        ],
         assets:  ['Provider App','Meridian API','Canvas','Health Gorilla','External Labs','Genetics'],
         movement: [
           'Provider App → Meridian API → Canvas creates the clinical order record.',
@@ -669,7 +682,59 @@
       return { p1: ptOf(A, aSide), p2: ptOf(B, bSide), aSide, bSide };
     }
 
+    const customEdgePorts = {
+      // Step 03: make Canvas read as one inbound order record, then two distinct outbound routes.
+      'api>canvas': {
+        from: { x: 510, y: 415 }, to: { x: 70, y: 590 },
+        fromDir: 'left', toDir: 'left', tangent: 150
+      },
+      'canvas>health-gorilla': {
+        from: { x: 420, y: 551 }, to: { x: 720, y: 295 },
+        fromDir: 'up', toDir: 'down', tangent: 105
+      },
+      'canvas>genetics-lab': {
+        from: { x: 550, y: 626 }, to: { x: 868, y: 295 },
+        fromDir: 'right', toDir: 'down', tangent: 120
+      },
+
+      // Step 04: separate inbound result ports so Health Gorilla and Genetics do not merge visually.
+      'health-gorilla>canvas': {
+        from: { x: 690, y: 295 }, to: { x: 270, y: 551 },
+        fromDir: 'down', toDir: 'up'
+      },
+      'genetics-lab>canvas': {
+        from: { x: 850, y: 295 }, to: { x: 500, y: 551 },
+        fromDir: 'down', toDir: 'up'
+      },
+
+      // Step 02: promoted observations enter Canvas on a separate lower-right port.
+      'graph>canvas': {
+        from: { x: 690, y: 610 }, to: { x: 550, y: 620 },
+        fromDir: 'left', toDir: 'right'
+      }
+    };
+
+    function controlPoint(point, dir, tangent) {
+      switch (dir) {
+        case 'right': return { x: point.x + tangent, y: point.y };
+        case 'left':  return { x: point.x - tangent, y: point.y };
+        case 'down':  return { x: point.x, y: point.y + tangent };
+        case 'up':    return { x: point.x, y: point.y - tangent };
+      }
+      return { x: point.x, y: point.y };
+    }
+
     function pathBetween(aId, bId) {
+      const custom = customEdgePorts[`${aId}>${bId}`];
+      if (custom) {
+        const p1 = custom.from;
+        const p2 = custom.to;
+        const tangent = custom.tangent || Math.max(46, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.34);
+        const c1 = controlPoint(p1, custom.fromDir, tangent);
+        const c2 = controlPoint(p2, custom.toDir, tangent);
+        return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`;
+      }
+
       const A = nodes[aId], B = nodes[bId];
       const { p1, p2, aSide, bSide } = anchorPoints(A, B);
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
@@ -696,7 +761,26 @@
       return label;
     }
 
-    function renderEdges(arrows, primarySet, setupArrows, syncArrows, promotedArrows) {
+    function portLabel({ x, y, dotX, dotY, text }) {
+      const g = document.createElementNS(NS, 'g');
+      const dot = document.createElementNS(NS, 'circle');
+      dot.setAttribute('class', 'port-dot');
+      dot.setAttribute('cx', dotX);
+      dot.setAttribute('cy', dotY);
+      dot.setAttribute('r', 5);
+      g.appendChild(dot);
+
+      const label = document.createElementNS(NS, 'text');
+      label.setAttribute('class', 'port-label');
+      label.setAttribute('x', x);
+      label.setAttribute('y', y);
+      label.setAttribute('text-anchor', 'start');
+      label.textContent = text;
+      g.appendChild(label);
+      return g;
+    }
+
+    function renderEdges(arrows, primarySet, setupArrows, syncArrows, promotedArrows, portLabels) {
       edgesGroup.innerHTML = '';
       if (arrows) {
         arrows.forEach(([a, b]) => {
@@ -734,6 +818,9 @@
           edgesGroup.appendChild(path);
           if (label) edgesGroup.appendChild(edgeLabel(a, b, label));
         });
+      }
+      if (portLabels) {
+        portLabels.forEach(port => edgesGroup.appendChild(portLabel(port)));
       }
     }
 
@@ -777,7 +864,7 @@
       assetsHeading.style.display = '';
       movementHeading.style.display = '';
 
-      renderEdges(step.arrows, new Set(step.primary), step.setupArrows, step.syncArrows, step.promotedArrows);
+      renderEdges(step.arrows, new Set(step.primary), step.setupArrows, step.syncArrows, step.promotedArrows, step.portLabels);
     }
 
     function resetView() {
