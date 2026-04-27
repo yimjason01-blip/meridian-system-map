@@ -379,8 +379,12 @@
             <span class="step-num">08</span><strong>Provider review</strong>
             <span class="desc">Engine output returns to Meridian DB, then Provider App.</span>
           </button>
+          <button class="step" data-step="action_orders">
+            <span class="step-num">09</span><strong>Orders from review</strong>
+            <span class="desc">CAC / Rx orders leave through Canvas.</span>
+          </button>
           <button class="step" data-step="release">
-            <span class="step-num">09</span><strong>Release to patient</strong>
+            <span class="step-num">10</span><strong>Release to patient</strong>
             <span class="desc">Provider → API/DB → gate → Patient App.</span>
           </button>
         </div>
@@ -425,7 +429,8 @@
 
       // External clinical: external sources upstream, then Health Gorilla + Genetics
       'ext-labs':       { cx: 706, cy: 152, w: 124, h: 32, label: 'External Labs',   sub: '',                cls: 'upstream' },
-      'ext-imaging':    { cx: 838, cy: 152, w: 116, h: 32, label: 'Imaging',         sub: '',                cls: 'upstream' },
+      'ext-imaging':    { cx: 838, cy: 152, w: 116, h: 32, label: 'Imaging / CAC',   sub: '',                cls: 'upstream' },
+      'pharmacy':       { cx: 990, cy: 152, w: 128, h: 32, label: 'Pharmacy / eRx',  sub: '',                cls: 'upstream' },
       'ext-hie':        { cx: 772, cy: 188, w: 244, h: 30, label: 'HIE · Outside Records', sub: '',          cls: 'upstream' },
       'health-gorilla': { cx: 720, cy: 270, w: 156, h: 50, label: 'Health Gorilla',  sub: 'Clinical interop', cls: 'connector' },
       'genetics-lab':   { cx: 868, cy: 270, w: 100, h: 50, label: 'Genetics',        sub: 'Direct',          cls: 'connector' },
@@ -594,11 +599,35 @@
         movement: [
           'Meridian Engine → Meridian Database writes risk / attention / action artifacts.',
           'Meridian Database → Meridian API → Provider App presents the clinician review queue.',
-          'Provider review happens before anything is released to the patient.'
+          'Provider review happens before orders or patient release.'
+        ]
+      },
+      action_orders: {
+        title: '09 · Orders from review',
+        summary: 'After provider review, some accepted actions become outbound clinical orders before patient-facing release. The provider initiates them from the Provider App; Meridian API writes the operational order into Canvas; Canvas sends CAC imaging orders to imaging/radiology and prescriptions through the eRx/pharmacy path.',
+        primary: ['provider-app', 'canvas'],
+        arrows:  [
+          ['provider-app','api'],
+          ['api','canvas'],
+          ['canvas','ext-imaging'],
+          ['canvas','pharmacy']
+        ],
+        nodes:   ['provider-app','api','canvas','ext-imaging','pharmacy'],
+        portLabels: [
+          { x: 92, y: 575, dotX: 70, dotY: 590, text: 'Reviewed order in' },
+          { x: 432, y: 538, dotX: 432, dotY: 551, text: 'CAC / imaging out' },
+          { x: 555, y: 641, dotX: 550, dotY: 626, text: 'Rx / eRx out' }
+        ],
+        assets:  ['Provider App','Meridian API','Canvas','Imaging / CAC','Pharmacy / eRx'],
+        movement: [
+          'Provider App → Meridian API sends the reviewed clinical action order.',
+          'Meridian API → Canvas creates the operational clinical order record.',
+          'CAC / imaging: Canvas → Imaging / CAC.',
+          'Prescription: Canvas → Pharmacy / eRx.'
         ]
       },
       release: {
-        title: '09 · Release to patient',
+        title: '10 · Release to patient',
         summary: 'The release is initiated from the Provider App after clinician review. The Provider App sends the release signal through the Meridian API, Meridian records the approved/released state, and the Release Gate controls what becomes visible in the Patient App.',
         primary: ['provider-app', 'release', 'patient-app'],
         arrows:  [
@@ -721,6 +750,16 @@
       'canvas>genetics-lab': {
         from: { x: 550, y: 626 }, to: { x: 868, y: 295 },
         fromDir: 'right', toDir: 'down', tangent: 120
+      },
+
+      // Step 09: reviewed actions become outbound orders via Canvas.
+      'canvas>ext-imaging': {
+        from: { x: 432, y: 551 }, to: { x: 838, y: 168 },
+        fromDir: 'up', toDir: 'down', tangent: 125
+      },
+      'canvas>pharmacy': {
+        from: { x: 550, y: 626 }, to: { x: 990, y: 168 },
+        fromDir: 'right', toDir: 'down', tangent: 130
       },
 
       // Step 04: separate inbound result ports so Health Gorilla and Genetics do not merge visually.
