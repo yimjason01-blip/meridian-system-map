@@ -372,11 +372,15 @@
             <span class="desc">Clinical features replicate to Meridian for the engine.</span>
           </button>
           <button class="step" data-step="engine">
-            <span class="step-num">07</span><strong>Engine reasoning</strong>
-            <span class="desc">Engine reads/writes Meridian DB; aids assist.</span>
+            <span class="step-num">07</span><strong>Motion to engine</strong>
+            <span class="desc">Meridian DB + aids feed the engine.</span>
+          </button>
+          <button class="step" data-step="provider_review">
+            <span class="step-num">08</span><strong>Provider review</strong>
+            <span class="desc">Engine output returns to Meridian DB, then Provider App.</span>
           </button>
           <button class="step" data-step="release">
-            <span class="step-num">08</span><strong>Release to patient</strong>
+            <span class="step-num">09</span><strong>Release to patient</strong>
             <span class="desc">Approved state flows through the release gate.</span>
           </button>
         </div>
@@ -556,25 +560,45 @@
         ]
       },
       engine: {
-        title: '07 · Engine reasoning',
-        summary: 'The engine reads from the Meridian Database — including synced Canvas features and native Meridian data (wearables, patient-entered, prior artifacts). It writes risk, attention, and action artifacts back to the Meridian Database. Evidence and LLM providers are reasoning aids only and never write patient facts.',
+        title: '07 · Motion to engine',
+        summary: 'This step only shows the inbound reasoning motion: Meridian Database sends the engine the normalized clinical/features context it needs. Evidence APIs and LLM providers assist the engine, but they do not write patient facts or bypass Meridian Database.',
         primary: ['engine'],
         arrows:  [
           ['graph','engine'],
-          ['engine','graph'],
           ['evidence','engine'],
           ['llm','engine']
         ],
         nodes:   ['graph','engine','evidence','llm'],
         assets:  ['Meridian Database','Meridian Engine','Evidence APIs','LLM Providers'],
         movement: [
-          'Meridian Database ↔ Engine for read/write of features and artifacts.',
-          'Engine ← Evidence APIs / LLM Providers for bounded synthesis.',
-          'Engine never writes to Canvas; clinical action requires a provider.'
+          'Meridian Database → Meridian Engine for the feature/context package.',
+          'Evidence APIs / LLM Providers → Engine as bounded reasoning aids.',
+          'This step stops at the engine; output/review is the next motion.'
+        ]
+      },
+      provider_review: {
+        title: '08 · Provider review',
+        summary: 'The engine writes generated risk, attention, and action artifacts back to the Meridian Database. The Provider App then pulls that review queue through the Meridian API so a clinician can accept, edit, reject, or release the output.',
+        primary: ['provider-app', 'engine'],
+        arrows:  [
+          ['engine','graph'],
+          ['graph','api'],
+          ['api','provider-app']
+        ],
+        nodes:   ['engine','graph','api','provider-app'],
+        portLabels: [
+          { x: 714, y: 650, dotX: 720, dotY: 629, text: 'Artifacts stored' },
+          { x: 726, y: 542, dotX: 720, dotY: 551, text: 'Review queue read' }
+        ],
+        assets:  ['Meridian Engine','Meridian Database','Meridian API','Provider App'],
+        movement: [
+          'Meridian Engine → Meridian Database writes risk / attention / action artifacts.',
+          'Meridian Database → Meridian API → Provider App presents the clinician review queue.',
+          'Provider review happens before anything is released to the patient.'
         ]
       },
       release: {
-        title: '08 · Release to patient',
+        title: '09 · Release to patient',
         summary: 'Provider-approved state passes through the release gate to the Patient App. The gate is patient-side only — the Provider App reads directly. Sensitive findings stay behind the gate until reviewed.',
         primary: ['release', 'patient-app'],
         arrows:  [
@@ -705,6 +729,16 @@
       'genetics-lab>canvas': {
         from: { x: 850, y: 295 }, to: { x: 500, y: 551 },
         fromDir: 'down', toDir: 'up'
+      },
+
+      // Step 08: make the engine output stop at Meridian DB before surfacing to provider review.
+      'engine>graph': {
+        from: { x: 370, y: 800 }, to: { x: 720, y: 629 },
+        fromDir: 'right', toDir: 'down', tangent: 115
+      },
+      'graph>api': {
+        from: { x: 720, y: 551 }, to: { x: 620, y: 440 },
+        fromDir: 'up', toDir: 'down', tangent: 70
       },
 
       // Step 02: promoted observations enter Canvas on a separate lower-right port.
