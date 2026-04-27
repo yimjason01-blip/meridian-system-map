@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meridian System Map</title>
+  <style>
+    :root {
+      --bg: #08090a;
+      --panel: #17181b;
+      --card: #24262a;
+      --hover: #30333a;
+      --border: #35383e;
+      --text: #f7f8f8;
+      --secondary: #d0d6e0;
+      --muted: #a8adb7;
+      --accent: #5e6ad2;
+      --accent-hover: #7170ff;
+      --warn: #e09b2d;
+      --pink: #d14a6a;
+      --info: #6db1c9;
+      --purple: #9d7ae3;
+      --ok: #27a644;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body { font-feature-settings: "cv01", "ss03"; }
+    .page { max-width: 1560px; margin: 0 auto; padding: 28px 28px 40px; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; flex-wrap: wrap; }
+    .kicker { color: var(--muted); font-size: 12px; font-weight: 510; letter-spacing: .02em; margin-bottom: 8px; }
+    h1 { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 510; letter-spacing: -.02em; }
+    .dek { margin: 10px 0 0; color: var(--secondary); max-width: 880px; font-size: 14px; line-height: 1.48; }
+    .status-pill { border: 1px solid var(--border); background: var(--panel); color: var(--secondary); border-radius: 999px; padding: 7px 11px; font-size: 12px; white-space: nowrap; }
+
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: stretch; }
+    .canvas {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(23,24,27,.98), rgba(12,13,15,.98));
+      border-radius: 14px;
+      padding: 18px;
+      min-height: 880px;
+      position: relative;
+      overflow: hidden;
+    }
+    .canvas::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.020) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.020) 1px, transparent 1px);
+      background-size: 26px 26px;
+      pointer-events: none;
+      opacity: .45;
+    }
+    .canvas svg { width: 100%; height: auto; display: block; position: relative; z-index: 1; }
+
+    /* Zones */
+    .zone-rect {
+      stroke-width: 1;
+      stroke-dasharray: 4 5;
+    }
+    .zone-rect.write-sources { fill: rgba(255,255,255,0.012); stroke: rgba(168,173,183,0.20); }
+    .zone-rect.patient-side  { fill: rgba(113,112,255,0.030); stroke: rgba(113,112,255,0.28); }
+    .zone-rect.connectors    { fill: rgba(209,74,106,0.025); stroke: rgba(209,74,106,0.28); }
+    .zone-rect.provider-side { fill: rgba(157,122,227,0.030); stroke: rgba(157,122,227,0.28); }
+    .zone-rect.upstream      { fill: rgba(168,173,183,0.025); stroke: rgba(168,173,183,0.30); }
+    .zone-rect.canvas-zone   { fill: rgba(232,96,76,0.045); stroke: rgba(232,96,76,0.42); stroke-dasharray: none; stroke-width: 1.4; }
+    .zone-rect.meridian-zone { fill: rgba(39,166,68,0.045);  stroke: rgba(39,166,68,0.42);  stroke-dasharray: none; stroke-width: 1.4; }
+    .zone-rect.engine-zone   { fill: rgba(224,155,45,0.040); stroke: rgba(224,155,45,0.36); stroke-dasharray: none; stroke-width: 1.2; }
+    .zone-rect.aids          { fill: rgba(157,122,227,0.030); stroke: rgba(157,122,227,0.30); }
+    .zone-rect.release-zone  { fill: rgba(232,96,76,0.040); stroke: rgba(232,96,76,0.40); stroke-dasharray: none; stroke-width: 1.2; }
+
+    .zone-label {
+      fill: var(--secondary);
+      font-size: 10.5px;
+      font-weight: 590;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .zone-label.muted { fill: var(--muted); font-size: 9.5px; }
+    .zone-label.heavy { fill: var(--text); font-size: 11.5px; }
+
+    /* Nodes */
+    .node rect {
+      fill: rgba(36,38,42,.96);
+      stroke: var(--border);
+      stroke-width: 1;
+      transition: stroke .18s, fill .18s, filter .18s, stroke-width .18s;
+    }
+    .node .label {
+      fill: var(--text);
+      font-size: 13px;
+      font-weight: 590;
+      letter-spacing: -.005em;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+    }
+    .node .sublabel {
+      fill: var(--muted);
+      font-size: 9.5px;
+      font-weight: 510;
+      letter-spacing: .045em;
+      text-transform: uppercase;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+    }
+    .node.upstream rect  { stroke: rgba(168,173,183,.45); fill: rgba(36,38,42,0.85); stroke-dasharray: 3 3; }
+    .node.upstream .label { font-size: 11.5px; }
+    .node.patient rect   { stroke: rgba(113,112,255,.55); }
+    .node.provider rect  { stroke: rgba(157,122,227,.60); }
+    .node.connector rect { stroke: rgba(209,74,106,.50); }
+    .node.api rect       { stroke: rgba(109,177,201,.70); fill: rgba(109,177,201,0.10); }
+    .node.canvas rect    { stroke: rgba(232,96,76,.70);  fill: rgba(232,96,76,0.10); }
+    .node.graph rect     { stroke: rgba(39,166,68,.70);  fill: rgba(39,166,68,0.10); }
+    .node.engine rect    { stroke: rgba(224,155,45,.65); fill: rgba(224,155,45,0.10); }
+    .node.aid rect       { stroke: rgba(157,122,227,.55); fill: rgba(36,38,42,0.85); }
+    .node.release rect   { stroke: rgba(232,96,76,.65); fill: rgba(232,96,76,0.08); }
+
+    .node.dimmed rect { fill: rgba(23,24,27,.70); stroke: rgba(53,56,62,.45); }
+    .node.dimmed .label { fill: #6b7280; }
+    .node.dimmed .sublabel { fill: #4f5662; }
+
+    .node.active rect {
+      stroke: var(--accent-hover);
+      stroke-width: 1.8;
+      fill: rgba(94,106,210,.18);
+      filter: drop-shadow(0 0 12px rgba(113,112,255,.35));
+    }
+    .node.active.primary rect {
+      stroke: var(--warn);
+      stroke-width: 2.2;
+      fill: rgba(224,155,45,.22);
+      filter: drop-shadow(0 0 14px rgba(224,155,45,.45));
+    }
+
+    /* Edges */
+    .edge {
+      fill: none;
+      stroke: var(--accent-hover);
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 6px rgba(113,112,255,.40));
+      pointer-events: none;
+    }
+    .edge.primary {
+      stroke: var(--warn);
+      filter: drop-shadow(0 0 7px rgba(224,155,45,.50));
+    }
+    .edge.setup {
+      stroke: rgba(168,173,183,.65);
+      stroke-width: 1.6;
+      stroke-dasharray: 6 5;
+      filter: none;
+    }
+    .edge.sync {
+      stroke: rgba(109,177,201,.85);
+      stroke-width: 2.0;
+      stroke-dasharray: 8 4;
+      filter: drop-shadow(0 0 5px rgba(109,177,201,.40));
+    }
+    .edge.promoted {
+      stroke: rgba(39,166,68,.92);
+      stroke-width: 2.0;
+      stroke-dasharray: 3 7;
+      filter: drop-shadow(0 0 5px rgba(39,166,68,.35));
+    }
+    .edge-label {
+      fill: var(--secondary);
+      font-size: 10px;
+      font-weight: 590;
+      letter-spacing: .035em;
+      text-transform: uppercase;
+      paint-order: stroke;
+      stroke: rgba(8,9,10,.92);
+      stroke-width: 4px;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 18px;
+      min-height: 880px;
+      position: sticky;
+      top: 18px;
+      align-self: start;
+    }
+    .sidebar-kicker { color: var(--muted); font-size: 11px; font-weight: 510; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 8px; }
+    .sidebar h2 { margin: 0 0 14px; font-size: 22px; font-weight: 510; letter-spacing: -.012em; }
+    .step-list { display: grid; gap: 6px; margin-bottom: 12px; }
+    .step {
+      appearance: none;
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 11px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .step:hover { border-color: rgba(113,112,255,.6); background: var(--hover); }
+    .step.active { border-color: var(--accent-hover); background: rgba(94,106,210,.13); box-shadow: inset 3px 0 0 var(--accent-hover); }
+    .step-num { color: var(--accent-hover); font-size: 10px; font-weight: 590; letter-spacing: .04em; }
+    .step strong { display: block; font-size: 13px; font-weight: 590; margin-top: 2px; }
+    .step .desc { display: block; color: var(--muted); font-size: 11px; line-height: 1.32; margin-top: 3px; }
+
+    .reset-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--secondary);
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .reset-btn:hover { border-color: var(--accent-hover); color: var(--text); }
+
+    .detail { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+    .detail h3 { margin: 0 0 6px; font-size: 14px; font-weight: 590; }
+    .detail p { margin: 0 0 12px; color: var(--secondary); font-size: 12.5px; line-height: 1.48; }
+    .detail .label-row { color: var(--muted); font-size: 11px; font-weight: 590; letter-spacing: .04em; text-transform: uppercase; margin: 12px 0 6px; }
+    .detail ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+    .detail li { color: var(--secondary); font-size: 12px; line-height: 1.4; padding-left: 12px; position: relative; }
+    .detail li::before {
+      content: "";
+      position: absolute; left: 0; top: 7px;
+      width: 5px; height: 5px;
+      border-radius: 999px;
+      background: var(--accent-hover);
+    }
+
+    /* Legend */
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 22px; height: 0; border-top: 2px solid currentColor; display: inline-block; }
+    .swatch.solid { color: var(--accent-hover); border-top-style: solid; }
+    .swatch.dashed { color: rgba(168,173,183,.85); border-top-style: dashed; }
+    .swatch.sync { color: rgba(109,177,201,.95); border-top-style: dashed; }
+    .swatch.promoted { color: rgba(39,166,68,.95); border-top-style: dotted; }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar { position: static; min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="topbar">
+      <div>
+        <div class="kicker">Meridian Architecture · Canvas-First Data-Path Map</div>
+        <h1>Meridian System Map</h1>
+        <p class="dek">Canvas is the clinical system of record. Meridian Database holds what Canvas can't or shouldn't — wearables, engine artifacts, longitudinal Meridian-only patient data. Canvas → Meridian sync delivers clinical features to the engine. Click a step to trace a single data path.</p>
+      </div>
+      <div class="status-pill">Standalone HTML · Dedicated File</div>
+    </section>
+
+    <section class="workspace">
+      <div class="canvas">
+        <svg viewBox="0 0 1240 940" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Meridian canvas-first system map">
+          <defs>
+            <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7170ff" />
+            </marker>
+            <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#e09b2d" />
+            </marker>
+            <marker id="arrow-sync" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6db1c9" />
+            </marker>
+            <marker id="arrow-promoted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#27a644" />
+            </marker>
+          </defs>
+
+          <g id="zones">
+            <!-- Top: Write Sources outer band -->
+            <rect class="zone-rect write-sources" x="20" y="50" width="1200" height="320" rx="14"/>
+            <text class="zone-label" x="40" y="42">Write sources · everything that puts data into the system</text>
+
+            <!-- Patient side -->
+            <rect class="zone-rect patient-side" x="40" y="80" width="280" height="280" rx="10"/>
+            <text class="zone-label muted" x="56" y="98">Patient side</text>
+            <rect class="zone-rect upstream" x="56" y="108" width="248" height="86" rx="8"/>
+            <text class="zone-label muted" x="68" y="124">Upstream · external to Meridian</text>
+
+            <!-- Cloud wearables -->
+            <rect class="zone-rect connectors" x="340" y="80" width="280" height="280" rx="10"/>
+            <text class="zone-label muted" x="356" y="98">Cloud wearables</text>
+            <rect class="zone-rect upstream" x="356" y="108" width="248" height="86" rx="8"/>
+            <text class="zone-label muted" x="368" y="124">Upstream · vendor accounts</text>
+
+            <!-- External clinical -->
+            <rect class="zone-rect connectors" x="640" y="80" width="280" height="280" rx="10"/>
+            <text class="zone-label muted" x="656" y="98">External clinical</text>
+            <rect class="zone-rect upstream" x="656" y="108" width="248" height="86" rx="8"/>
+            <text class="zone-label muted" x="668" y="124">Upstream · external sources</text>
+
+            <!-- Provider side -->
+            <rect class="zone-rect provider-side" x="940" y="80" width="280" height="280" rx="10"/>
+            <text class="zone-label muted" x="956" y="98">Provider side</text>
+
+            <!-- Canvas system of record -->
+            <rect class="zone-rect canvas-zone" x="40" y="500" width="540" height="180" rx="12"/>
+            <text class="zone-label heavy" x="60" y="492">Canvas · clinical system of record</text>
+
+            <!-- Meridian system of record -->
+            <rect class="zone-rect meridian-zone" x="660" y="500" width="560" height="180" rx="12"/>
+            <text class="zone-label heavy" x="680" y="492">Meridian Database · derived + longitudinal + non-EMR</text>
+
+            <!-- Engine zone -->
+            <rect class="zone-rect engine-zone" x="40" y="720" width="600" height="200" rx="12"/>
+            <text class="zone-label" x="60" y="712">Reasoning · operates on Meridian Database</text>
+            <rect class="zone-rect aids" x="380" y="800" width="240" height="100" rx="10"/>
+            <text class="zone-label muted" x="394" y="818">Reasoning aids · never write patient facts</text>
+
+            <!-- Release zone -->
+            <rect class="zone-rect release-zone" x="680" y="720" width="540" height="200" rx="12"/>
+            <text class="zone-label" x="700" y="712">Release · controls patient-facing read</text>
+          </g>
+
+          <g id="edges"></g>
+          <g id="nodes"></g>
+        </svg>
+      </div>
+
+      <aside class="sidebar">
+        <div class="sidebar-kicker">Workflow lens</div>
+        <h2>Trace each data path</h2>
+        <div class="step-list" role="list">
+          <button class="step" data-step="patient_input">
+            <span class="step-num">01</span><strong>Patient-entered data</strong>
+            <span class="desc">Clinical → Canvas. Lifestyle/goals → Meridian DB.</span>
+          </button>
+          <button class="step" data-step="wearables">
+            <span class="step-num">02</span><strong>Wearable / home-device data</strong>
+            <span class="desc">Raw streams → Meridian DB. Promoted observations → Canvas.</span>
+          </button>
+          <button class="step" data-step="lab_orders">
+            <span class="step-num">03</span><strong>Lab / genetic orders</strong>
+            <span class="desc">Provider order → Canvas. Blood labs route through Health Gorilla.</span>
+          </button>
+          <button class="step" data-step="external_clinical">
+            <span class="step-num">04</span><strong>External clinical results</strong>
+            <span class="desc">Health Gorilla aggregates labs/imaging/HIE → Canvas.</span>
+          </button>
+          <button class="step" data-step="provider_writes">
+            <span class="step-num">05</span><strong>Provider writes</strong>
+            <span class="desc">Orders, edits, notes → Canvas via Meridian API.</span>
+          </button>
+          <button class="step" data-step="sync">
+            <span class="step-num">06</span><strong>Canvas → Meridian sync</strong>
+            <span class="desc">Clinical features replicate to Meridian for the engine.</span>
+          </button>
+          <button class="step" data-step="engine">
+            <span class="step-num">07</span><strong>Engine reasoning</strong>
+            <span class="desc">Engine reads/writes Meridian DB; aids assist.</span>
+          </button>
+          <button class="step" data-step="release">
+            <span class="step-num">08</span><strong>Release to patient</strong>
+            <span class="desc">Approved state flows through the release gate.</span>
+          </button>
+        </div>
+        <button class="reset-btn" id="reset-btn">Show full architecture</button>
+
+        <div class="detail">
+          <h3 id="step-title">Full architecture</h3>
+          <p id="step-summary">All assets shown. Click a workflow step to highlight one data path through the system.</p>
+          <div class="label-row" id="assets-heading" style="display:none">Active assets</div>
+          <ul id="step-assets"></ul>
+          <div class="label-row" id="movement-heading" style="display:none">Path</div>
+          <ul id="step-movement"></ul>
+        </div>
+
+        <div class="legend">
+          <span><span class="swatch solid"></span>data flow</span>
+          <span><span class="swatch sync"></span>system sync</span>
+          <span><span class="swatch promoted"></span>clinically promoted</span>
+          <span><span class="swatch dashed"></span>setup / configuration</span>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    // viewBox 1240 x 940
+
+    const nodes = {
+      // === Write sources (top band) ===
+
+      // Patient side: on-device upstream, then Patient App
+      'apple-watch':    { cx: 122, cy: 162, w: 110, h: 38, label: 'Apple Watch',     sub: 'Sensor',          cls: 'upstream' },
+      'healthkit':      { cx: 240, cy: 162, w: 110, h: 38, label: 'HealthKit',       sub: 'Aggregator',      cls: 'upstream' },
+      'patient-app':    { cx: 180, cy: 270, w: 240, h: 64, label: 'Patient App',     sub: 'Member surface · writes + reads', cls: 'patient' },
+
+      // Cloud wearables: vendors upstream, then Terra
+      'whoop':          { cx: 386, cy: 162, w: 64,  h: 32, label: 'Whoop',           sub: '',                cls: 'upstream' },
+      'garmin':         { cx: 458, cy: 162, w: 64,  h: 32, label: 'Garmin',          sub: '',                cls: 'upstream' },
+      'dexcom':         { cx: 530, cy: 162, w: 64,  h: 32, label: 'Dexcom',          sub: '',                cls: 'upstream' },
+      'oura':           { cx: 600, cy: 162, w: 60,  h: 32, label: 'Oura',            sub: '',                cls: 'upstream' },
+      'terra':          { cx: 480, cy: 270, w: 240, h: 50, label: 'Terra',           sub: 'Wearable aggregator API', cls: 'connector' },
+
+      // External clinical: external sources upstream, then Health Gorilla + Genetics
+      'ext-labs':       { cx: 706, cy: 152, w: 124, h: 32, label: 'External Labs',   sub: '',                cls: 'upstream' },
+      'ext-imaging':    { cx: 838, cy: 152, w: 116, h: 32, label: 'Imaging',         sub: '',                cls: 'upstream' },
+      'ext-hie':        { cx: 772, cy: 188, w: 244, h: 30, label: 'HIE · Outside Records', sub: '',          cls: 'upstream' },
+      'health-gorilla': { cx: 720, cy: 270, w: 156, h: 50, label: 'Health Gorilla',  sub: 'Clinical interop', cls: 'connector' },
+      'genetics-lab':   { cx: 868, cy: 270, w: 100, h: 50, label: 'Genetics',        sub: 'Direct',          cls: 'connector' },
+
+      // Provider side
+      'provider-app':   { cx: 1080, cy: 230, w: 240, h: 100, label: 'Provider App',  sub: 'Clinician surface · writes + reads', cls: 'provider' },
+
+      // === Gateway ===
+      'api':            { cx: 620, cy: 415, w: 220, h: 50, label: 'Meridian API',    sub: '', cls: 'api' },
+
+      // === System of record band ===
+      'canvas':         { cx: 310, cy: 590, w: 480, h: 78, label: 'Canvas',          sub: 'Problems · Meds · Orders · Labs · Notes · Encounters', cls: 'canvas' },
+      'graph':          { cx: 940, cy: 590, w: 500, h: 78, label: 'Meridian Database', sub: 'Wearables · Engine artifacts · Lifestyle · Audit',  cls: 'graph' },
+
+      // === Engine + Release ===
+      'engine':         { cx: 220, cy: 800, w: 300, h: 130, label: 'Meridian Engine', sub: 'Risk · Attention · Action', cls: 'engine' },
+      'evidence':       { cx: 444, cy: 850, w: 110, h: 40, label: 'Evidence APIs',  sub: '',         cls: 'aid' },
+      'llm':            { cx: 560, cy: 850, w: 110, h: 40, label: 'LLM Providers',  sub: '',         cls: 'aid' },
+      'release':        { cx: 940, cy: 820, w: 220, h: 60, label: 'Release Gate',    sub: 'Patient-side only', cls: 'release' },
+    };
+
+    const steps = {
+      patient_input: {
+        title: '01 · Patient-entered data',
+        summary: 'The patient enters data in the Patient App. The Meridian API routes it: clinical updates (problems, allergies, meds, family history) flow to Canvas; lifestyle, goals, symptom diaries, and Meridian-only patient-reported data flow to the Meridian Database. Canvas is still preferred whenever it can hold the data.',
+        primary: ['patient-app'],
+        arrows:  [
+          ['patient-app','api'],
+          ['api','canvas'],
+          ['api','graph']
+        ],
+        nodes:   ['patient-app', 'api', 'canvas', 'graph'],
+        assets:  ['Patient App', 'Meridian API', 'Canvas', 'Meridian Database'],
+        movement: [
+          'Clinical: Patient App → Meridian API → Canvas.',
+          'Lifestyle / goals / Meridian-only: Patient App → Meridian API → Meridian Database.',
+          'Default rule: if Canvas can hold it, Canvas holds it.'
+        ]
+      },
+      wearables: {
+        title: '02 · Wearable / home-device data',
+        summary: 'Raw wearable and home-device data defaults to the Meridian Database — Canvas is not a telemetry store. On-device data flows through HealthKit and the Patient App. Cloud wearables flow through Terra. Selected summaries or observations can be clinically promoted from Meridian Database into Canvas after review.',
+        primary: ['patient-app', 'terra', 'graph'],
+        arrows:  [
+          ['apple-watch','healthkit'], ['healthkit','patient-app'], ['patient-app','api'],
+          ['whoop','terra'], ['garmin','terra'], ['dexcom','terra'], ['oura','terra'],
+          ['terra','api'],
+          ['api','graph']
+        ],
+        setupArrows: [['patient-app','terra']],
+        promotedArrows: [['graph','canvas','clinically promoted observations']],
+        nodes:   ['apple-watch','healthkit','patient-app','whoop','garmin','dexcom','oura','terra','api','graph','canvas'],
+        assets:  ['Apple Watch','HealthKit','Patient App','Whoop · Garmin · Dexcom · Oura','Terra','Meridian API','Meridian Database','Canvas'],
+        movement: [
+          'Raw on-device: Apple Watch → HealthKit → Patient App → API → Meridian Database.',
+          'Raw cloud: vendor → Terra → API → Meridian Database.',
+          'Clinically promoted: Meridian Database → Canvas only after review/acceptance (for example, 7-day home BP average).',
+          'Canvas receives selected observations, not raw telemetry streams.'
+        ]
+      },
+      lab_orders: {
+        title: '03 · Lab / genetic orders',
+        summary: 'Orders originate with the provider. Meridian API sends the order into Canvas, because Canvas is the operational/clinical record. Blood lab orders route from Canvas through Health Gorilla to external labs. Genetic lab orders are represented as Canvas to the direct Genetics connector unless routed through Health Gorilla in a specific implementation.',
+        primary: ['provider-app', 'canvas', 'health-gorilla'],
+        arrows:  [
+          ['provider-app','api'],
+          ['api','canvas'],
+          ['canvas','health-gorilla'],
+          ['health-gorilla','ext-labs'],
+          ['canvas','genetics-lab']
+        ],
+        nodes:   ['provider-app','api','canvas','health-gorilla','ext-labs','genetics-lab'],
+        assets:  ['Provider App','Meridian API','Canvas','Health Gorilla','External Labs','Genetics'],
+        movement: [
+          'Provider App → Meridian API → Canvas creates the clinical order record.',
+          'Blood labs: Canvas → Health Gorilla → external lab network.',
+          'Genetic labs: Canvas → Genetics connector/direct lab path unless routed through Health Gorilla by implementation.',
+          'Results return in the next step and land back in Canvas as clinical data.'
+        ]
+      },
+      external_clinical: {
+        title: '04 · External clinical results',
+        summary: 'External clinical results land in Canvas, the system of record. Health Gorilla aggregates lab results, imaging, and HIE / outside records and delivers them to Canvas directly — it does not pass through the Meridian API. Genetics results file into Canvas as a direct connector unless the specific lab route uses Health Gorilla.',
+        primary: ['health-gorilla', 'canvas'],
+        arrows:  [
+          ['ext-labs','health-gorilla'],
+          ['ext-imaging','health-gorilla'],
+          ['ext-hie','health-gorilla'],
+          ['health-gorilla','canvas'],
+          ['genetics-lab','canvas']
+        ],
+        nodes:   ['ext-labs','ext-imaging','ext-hie','health-gorilla','genetics-lab','canvas'],
+        assets:  ['External Labs','Imaging','HIE · Outside Records','Health Gorilla','Genetics','Canvas'],
+        movement: [
+          'External lab results / imaging / HIE → Health Gorilla → Canvas.',
+          'Genetic results → Canvas (direct, unless routed through Health Gorilla).',
+          'External clinical results bypass the Meridian API; Canvas remains the source of truth.'
+        ]
+      },
+      provider_writes: {
+        title: '05 · Provider writes',
+        summary: 'Clinician writes — orders, edits, notes, problem-list changes — flow from the Provider App through the Meridian API to Canvas. Canvas is the operational record. Meridian holds intent and audit; Canvas holds the legal/operational order.',
+        primary: ['provider-app', 'canvas'],
+        arrows:  [
+          ['provider-app','api'],
+          ['api','canvas']
+        ],
+        nodes:   ['provider-app','api','canvas'],
+        assets:  ['Provider App','Meridian API','Canvas'],
+        movement: [
+          'Provider App → Meridian API → Canvas.',
+          'Engine never writes to Canvas. Only providers do, after review.'
+        ]
+      },
+      sync: {
+        title: '06 · Canvas → Meridian sync',
+        summary: 'Meridian Database mirrors clinical features from Canvas so the engine can reason on them. This is one-direction by default: Canvas is the system of record; Meridian holds a normalized, longitudinal copy of features the engine needs. Clinical writes still go to Canvas — the sync only refreshes the engine\u2019s view.',
+        primary: ['canvas', 'graph'],
+        arrows:  [],
+        syncArrows: [['canvas','graph']],
+        nodes:   ['canvas','graph'],
+        assets:  ['Canvas','Meridian Database'],
+        movement: [
+          'Canvas → Meridian Database for clinical features the engine consumes.',
+          'Sync is at the database layer; it does not pass through the Meridian API.',
+          'Source of truth stays in Canvas. Meridian holds a derived, query-optimized copy.'
+        ]
+      },
+      engine: {
+        title: '07 · Engine reasoning',
+        summary: 'The engine reads from the Meridian Database — including synced Canvas features and native Meridian data (wearables, patient-entered, prior artifacts). It writes risk, attention, and action artifacts back to the Meridian Database. Evidence and LLM providers are reasoning aids only and never write patient facts.',
+        primary: ['engine'],
+        arrows:  [
+          ['graph','engine'],
+          ['engine','graph'],
+          ['evidence','engine'],
+          ['llm','engine']
+        ],
+        nodes:   ['graph','engine','evidence','llm'],
+        assets:  ['Meridian Database','Meridian Engine','Evidence APIs','LLM Providers'],
+        movement: [
+          'Meridian Database ↔ Engine for read/write of features and artifacts.',
+          'Engine ← Evidence APIs / LLM Providers for bounded synthesis.',
+          'Engine never writes to Canvas; clinical action requires a provider.'
+        ]
+      },
+      release: {
+        title: '08 · Release to patient',
+        summary: 'Provider-approved state passes through the release gate to the Patient App. The gate is patient-side only — the Provider App reads directly. Sensitive findings stay behind the gate until reviewed.',
+        primary: ['release', 'patient-app'],
+        arrows:  [
+          ['graph','release'],
+          ['release','patient-app']
+        ],
+        nodes:   ['graph','release','patient-app'],
+        assets:  ['Meridian Database','Release Gate','Patient App'],
+        movement: [
+          'Meridian Database → Release Gate → Patient App for member-visible state.',
+          'Provider App reads directly; no gate on the clinician path.',
+          'The gate is a workflow control on egress, not on ingress.'
+        ]
+      }
+    };
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const nodesGroup = document.getElementById('nodes');
+    const edgesGroup = document.getElementById('edges');
+
+    Object.entries(nodes).forEach(([id, n]) => {
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', `node ${n.cls}`);
+      g.setAttribute('id', `n_${id}`);
+
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', n.cx - n.w / 2);
+      rect.setAttribute('y', n.cy - n.h / 2);
+      rect.setAttribute('width', n.w);
+      rect.setAttribute('height', n.h);
+      rect.setAttribute('rx', 8);
+      g.appendChild(rect);
+
+      const isEngine = id === 'engine';
+      const hasSub = n.sub && n.sub.length > 0;
+      const labelOffsetY = isEngine ? -38 : (hasSub ? (n.h < 42 ? -5 : -8) : 0);
+      const subOffsetY   = isEngine ? -22 : (n.h < 42 ? 8 : 11);
+
+      const label = document.createElementNS(NS, 'text');
+      label.setAttribute('class', 'label');
+      label.setAttribute('x', n.cx);
+      label.setAttribute('y', n.cy + labelOffsetY);
+      label.textContent = n.label;
+      g.appendChild(label);
+
+      if (hasSub) {
+        const sub = document.createElementNS(NS, 'text');
+        sub.setAttribute('class', 'sublabel');
+        sub.setAttribute('x', n.cx);
+        sub.setAttribute('y', n.cy + subOffsetY);
+        sub.textContent = n.sub;
+        g.appendChild(sub);
+      }
+
+      // Engine sub-pills
+      if (isEngine) {
+        const subY = n.cy + 22;
+        const items = ['Risk Models', 'Attention', 'Action Layer'];
+        const slotW = (n.w - 24) / items.length;
+        items.forEach((lab, i) => {
+          const pillX = n.cx - n.w / 2 + 12 + slotW * i + 4;
+          const pillW = slotW - 8;
+          const pillH = 26;
+          const r = document.createElementNS(NS, 'rect');
+          r.setAttribute('x', pillX);
+          r.setAttribute('y', subY - pillH / 2);
+          r.setAttribute('width', pillW);
+          r.setAttribute('height', pillH);
+          r.setAttribute('rx', 5);
+          r.setAttribute('fill', 'rgba(8,9,10,0.45)');
+          r.setAttribute('stroke', 'rgba(224,155,45,0.40)');
+          r.setAttribute('stroke-width', '0.8');
+          g.appendChild(r);
+          const t = document.createElementNS(NS, 'text');
+          t.setAttribute('class', 'sublabel');
+          t.setAttribute('x', pillX + pillW / 2);
+          t.setAttribute('y', subY);
+          t.setAttribute('font-size', '10');
+          t.textContent = lab;
+          g.appendChild(t);
+        });
+      }
+
+      nodesGroup.appendChild(g);
+    });
+
+    function anchorPoints(A, B) {
+      const dx = B.cx - A.cx, dy = B.cy - A.cy;
+      let aSide, bSide;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        aSide = dx > 0 ? 'right' : 'left';
+        bSide = dx > 0 ? 'left' : 'right';
+      } else {
+        aSide = dy > 0 ? 'bottom' : 'top';
+        bSide = dy > 0 ? 'top' : 'bottom';
+      }
+      const ptOf = (N, side) => {
+        switch (side) {
+          case 'right':  return { x: N.cx + N.w / 2, y: N.cy };
+          case 'left':   return { x: N.cx - N.w / 2, y: N.cy };
+          case 'top':    return { x: N.cx, y: N.cy - N.h / 2 };
+          case 'bottom': return { x: N.cx, y: N.cy + N.h / 2 };
+        }
+      };
+      return { p1: ptOf(A, aSide), p2: ptOf(B, bSide), aSide, bSide };
+    }
+
+    function pathBetween(aId, bId) {
+      const A = nodes[aId], B = nodes[bId];
+      const { p1, p2, aSide, bSide } = anchorPoints(A, B);
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const horizA = aSide === 'left' || aSide === 'right';
+      const horizB = bSide === 'left' || bSide === 'right';
+      const tangent = Math.max(40, Math.hypot(dx, dy) * 0.32);
+      const c1 = horizA
+        ? { x: p1.x + (aSide === 'right' ?  tangent : -tangent), y: p1.y }
+        : { x: p1.x, y: p1.y + (aSide === 'bottom' ?  tangent : -tangent) };
+      const c2 = horizB
+        ? { x: p2.x + (bSide === 'right' ?  tangent : -tangent), y: p2.y }
+        : { x: p2.x, y: p2.y + (bSide === 'bottom' ?  tangent : -tangent) };
+      return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`;
+    }
+
+    function edgeLabel(aId, bId, text) {
+      const A = nodes[aId], B = nodes[bId];
+      const label = document.createElementNS(NS, 'text');
+      label.setAttribute('class', 'edge-label');
+      label.setAttribute('x', (A.cx + B.cx) / 2);
+      label.setAttribute('y', (A.cy + B.cy) / 2 - 28);
+      label.setAttribute('text-anchor', 'middle');
+      label.textContent = text;
+      return label;
+    }
+
+    function renderEdges(arrows, primarySet, setupArrows, syncArrows, promotedArrows) {
+      edgesGroup.innerHTML = '';
+      if (arrows) {
+        arrows.forEach(([a, b]) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', pathBetween(a, b));
+          const isPrimary = primarySet.has(a) || primarySet.has(b);
+          path.setAttribute('class', 'edge' + (isPrimary ? ' primary' : ''));
+          path.setAttribute('marker-end', isPrimary ? 'url(#arrow-warn)' : 'url(#arrow-accent)');
+          edgesGroup.appendChild(path);
+        });
+      }
+      if (setupArrows) {
+        setupArrows.forEach(([a, b]) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', pathBetween(a, b));
+          path.setAttribute('class', 'edge setup');
+          edgesGroup.appendChild(path);
+        });
+      }
+      if (syncArrows) {
+        syncArrows.forEach(([a, b]) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', pathBetween(a, b));
+          path.setAttribute('class', 'edge sync');
+          path.setAttribute('marker-end', 'url(#arrow-sync)');
+          edgesGroup.appendChild(path);
+        });
+      }
+      if (promotedArrows) {
+        promotedArrows.forEach(([a, b, label]) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', pathBetween(a, b));
+          path.setAttribute('class', 'edge promoted');
+          path.setAttribute('marker-end', 'url(#arrow-promoted)');
+          edgesGroup.appendChild(path);
+          if (label) edgesGroup.appendChild(edgeLabel(a, b, label));
+        });
+      }
+    }
+
+    const stepButtons = document.querySelectorAll('.step');
+    const titleEl = document.getElementById('step-title');
+    const summaryEl = document.getElementById('step-summary');
+    const assetsEl = document.getElementById('step-assets');
+    const movementEl = document.getElementById('step-movement');
+    const assetsHeading = document.getElementById('assets-heading');
+    const movementHeading = document.getElementById('movement-heading');
+    const resetBtn = document.getElementById('reset-btn');
+    const allNodes = document.querySelectorAll('.node');
+
+    function renderList(el, items) {
+      el.innerHTML = '';
+      items.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        el.appendChild(li);
+      });
+    }
+
+    function applyStep(stepId) {
+      const step = steps[stepId];
+      if (!step) return;
+      stepButtons.forEach(b => b.classList.toggle('active', b.dataset.step === stepId));
+
+      const activeNodeIds = new Set(step.nodes);
+
+      allNodes.forEach(n => {
+        const id = n.id.replace('n_', '');
+        n.classList.toggle('active', activeNodeIds.has(id));
+        n.classList.toggle('primary', step.primary.includes(id));
+        n.classList.toggle('dimmed', !activeNodeIds.has(id));
+      });
+
+      titleEl.textContent = step.title;
+      summaryEl.textContent = step.summary;
+      renderList(assetsEl, step.assets);
+      renderList(movementEl, step.movement);
+      assetsHeading.style.display = '';
+      movementHeading.style.display = '';
+
+      renderEdges(step.arrows, new Set(step.primary), step.setupArrows, step.syncArrows, step.promotedArrows);
+    }
+
+    function resetView() {
+      stepButtons.forEach(b => b.classList.remove('active'));
+      allNodes.forEach(n => n.classList.remove('active', 'primary', 'dimmed'));
+      titleEl.textContent = 'Full architecture';
+      summaryEl.textContent = 'All assets shown. Click a workflow step to highlight one data path through the system.';
+      renderList(assetsEl, []);
+      renderList(movementEl, []);
+      assetsHeading.style.display = 'none';
+      movementHeading.style.display = 'none';
+      edgesGroup.innerHTML = '';
+    }
+
+    stepButtons.forEach(b => b.addEventListener('click', () => applyStep(b.dataset.step)));
+    resetBtn.addEventListener('click', resetView);
+
+    resetView();
+  </script>
+</body>
+</html>
