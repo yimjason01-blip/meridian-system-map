@@ -381,7 +381,7 @@
           </button>
           <button class="step" data-step="release">
             <span class="step-num">09</span><strong>Release to patient</strong>
-            <span class="desc">Approved state flows through the release gate.</span>
+            <span class="desc">Provider → API/DB → gate → Patient App.</span>
           </button>
         </div>
         <button class="reset-btn" id="reset-btn">Show full architecture</button>
@@ -599,18 +599,20 @@
       },
       release: {
         title: '09 · Release to patient',
-        summary: 'Provider-approved state passes through the release gate to the Patient App. The gate is patient-side only — the Provider App reads directly. Sensitive findings stay behind the gate until reviewed.',
-        primary: ['release', 'patient-app'],
+        summary: 'The release is initiated from the Provider App after clinician review. The Provider App sends the release signal through the Meridian API, Meridian records the approved/released state, and the Release Gate controls what becomes visible in the Patient App.',
+        primary: ['provider-app', 'release', 'patient-app'],
         arrows:  [
+          ['provider-app','api'],
+          ['api','graph'],
           ['graph','release'],
           ['release','patient-app']
         ],
-        nodes:   ['graph','release','patient-app'],
-        assets:  ['Meridian Database','Release Gate','Patient App'],
+        nodes:   ['provider-app','api','graph','release','patient-app'],
+        assets:  ['Provider App','Meridian API','Meridian Database','Release Gate','Patient App'],
         movement: [
-          'Meridian Database → Release Gate → Patient App for member-visible state.',
-          'Provider App reads directly; no gate on the clinician path.',
-          'The gate is a workflow control on egress, not on ingress.'
+          'Provider App → Meridian API sends the clinician-approved release signal.',
+          'Meridian API → Meridian Database records the approved/released state.',
+          'Meridian Database → Release Gate → Patient App exposes the approved patient-visible state.'
         ]
       }
     };
